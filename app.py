@@ -1,13 +1,11 @@
 # app.py
 # Nonagon (Manual Mode) – Streamlit
-# Jalankan:
+# Jalankan lokal:
 #   pip install streamlit matplotlib
 #   streamlit run app.py
 
-import math
 from collections import Counter
 from datetime import datetime
-
 import streamlit as st
 
 # -------------------- CONFIG --------------------
@@ -51,7 +49,7 @@ def compute_core_numbers(dob: datetime):
     total = dob.day + dob.month + dob.year
     personality = sum_digits(total)
 
-    bridge_double = sum(int(d) for d in str(dob.year)) + personality  # contoh umum
+    bridge_double = sum(int(d) for d in str(dob.year)) + personality
     life_value = sum_digits(bridge_double)
 
     return personality, bridge_double, life_value
@@ -62,7 +60,6 @@ def parse_core_list(text: str) -> Counter:
     Menghasilkan frekuensi tiap sektor (1..9).
     """
     nums = []
-    # terima pemisah koma atau titik
     text = (text or "").replace(".", ",")
     for token in text.split(","):
         token = token.strip()
@@ -76,55 +73,50 @@ def segments_by_order(freq: Counter):
     """[(sector_number, weight)] mengikuti SECTOR_ORDER."""
     return [(n, freq.get(n, 0)) for n in SECTOR_ORDER]
 
-def autopct_counts(values):
-    """
-    Tampilkan nilai hitung (bukan persen). Kosongkan label jika value=0.
-    """
-    total = sum(values)
-
-    def inner(pct):
-        if total == 0:
-            return ""
-        # konversi persen balik ke nilai kira-kira
-        val = int(round(pct * total / 100.0))
-        return f"{val}" if val > 0 else ""
-
-    return inner
-
+# -------------------- GRAFIK --------------------
 def draw_nonagon(freq: Counter, show_angle_note=True):
     import matplotlib.pyplot as plt
 
     segs = segments_by_order(freq)
     labels = [str(n) for n, _ in segs]
-    sizes = [w for _, w in segs]
+    raw_sizes = [w for _, w in segs]          # nilai asli (boleh 0)
+    total_raw = sum(raw_sizes)
 
     fig, ax = plt.subplots()
 
-    if sum(sizes) == 0:
-        # Tidak ada data -> tampilkan placeholder teks
-        ax.text(0.5, 0.5, "Belum ada core list.\nIsi angka seperti: 1,7,1,7,7,5,5,2",
+    if total_raw == 0:
+        ax.text(0.5, 0.5,
+                "Belum ada core list.\nIsi angka seperti: 1,7,1,7,7,5,5,2",
                 ha="center", va="center", fontsize=12)
         ax.axis("off")
         return fig
 
+    # Hindari error wedges=0 → pakai epsilon kecil untuk sektor kosong
+    eps = 1e-4
+    sizes = [s if s > 0 else eps for s in raw_sizes]
+
+    def autopct_counts(pct):
+        # konversi persen -> jumlah dari total asli
+        val = int(round(pct * total_raw / 100.0))
+        return f"{val}" if val > 0 else ""
+
     wedges, _ = ax.pie(
         sizes,
         labels=labels,
-        startangle=90,              # mulai dari atas agar konsisten
-        autopct=autopct_counts(sizes),
+        startangle=90,
+        autopct=autopct_counts,
         wedgeprops=dict(linewidth=1, edgecolor="white"),
     )
     ax.axis("equal")
 
-    # Lingkaran pusat untuk '0 / The Fool' (ring)
-    centre = plt.Circle((0, 0), 0.18, fill=False, linewidth=2)  # gaya/warna bisa diatur nanti
+    # Lingkaran pusat: 0 / The Fool
+    centre = plt.Circle((0, 0), 0.18, fill=False, linewidth=2)
     ax.add_artist(centre)
 
-    # Anotasi pergumulan (posisi naratif; tidak menghitung geometri)
+    # Anotasi pergumulan (naratif)
     ax.text(0.92, 0.10, "Eksternal: 8+9 (dekat 5)", transform=ax.transAxes, fontsize=9)
     ax.text(0.92, 0.05, "Internal: 8+7 (dekat 2)", transform=ax.transAxes, fontsize=9)
 
-    # Catatan sudut 140° antara sektor 9 dan 5 (informasi teoretis)
     if show_angle_note:
         ax.text(-0.12, 1.05, "Catatan: ∠(9,5) ≈ 140°", transform=ax.transAxes, fontsize=9)
 
@@ -146,28 +138,30 @@ with st.form("nonagon-form"):
     submitted = st.form_submit_button("Proses")
 
 if submitted:
-    # Hitung Personality & Life Value
     dob = parse_dob(dob_str)
     if not dob:
         st.error("Format tanggal lahir harus dd/mm/yyyy.")
     else:
         personality, bridge_double, life_value = compute_core_numbers(dob)
-
-        # Frekuensi sektor dari core list manual
         freq = parse_core_list(core_text)
 
         # ------- OUTPUT RINGKAS -------
         st.subheader("Hasil Ringkas")
         st.write(f"**Identitas:** {name or '—'} | {dob_str}")
-        st.write(f"**Core Numbers:** Personality = **{personality}** | Life Value = **{life_value}** (bridge {bridge_double}→{life_value})")
+        st.write(
+            f"**Core Numbers:** Personality = **{personality}** | "
+            f"Life Value = **{life_value}** (bridge {bridge_double}→{life_value})"
+        )
 
         # Arketipe utama by frekuensi (top-3)
-        top = sorted([(cnt, n) for n, cnt in freq.items()], key=lambda x: (x[0], -x[1]), reverse=True)[:3]
+        top = sorted([(cnt, n) for n, cnt in freq.items()],
+                     key=lambda x: (x[0], -x[1]), reverse=True)[:3]
         arketipe = [str(n) for cnt, n in top] if top else []
         st.write(f"**Arketipe Teratas (berdasar frekuensi):** {', '.join(arketipe) if arketipe else '—'}")
 
-        # Info pergumulan (sesuai narasi)
-        st.info("Pergumulan **eksternal** = 8 + 9 (di sisi Personality/5) • Pergumulan **internal** = 8 + 7 (di sisi Values/2).")
+        # Info pergumulan
+        st.info("Pergumulan **eksternal** = 8 + 9 (di sisi Personality/5) • "
+                "Pergumulan **internal** = 8 + 7 (di sisi Values/2).")
 
         # ------- NONAGON PLOT -------
         fig = draw_nonagon(freq, show_angle_note=show_angle)
@@ -182,4 +176,4 @@ if submitted:
 
 # Footer
 st.markdown("---")
-st.caption("Note: Elemen (api/tanah/udara/air) & Auto Mode (derivasi core dari DOB) akan ditambahkan setelah rumus final kamu siap.")
+st.caption("Next: Auto Mode (derivasi core dari DOB) & elemen (api/tanah/udara/air) akan ditambahkan setelah rumus final kamu siap.")
